@@ -1,0 +1,75 @@
+import cv2
+import numpy as np
+
+# 加载预训练的MobileNet-SSD模型和配置文件
+net = cv2.dnn.readNetFromCaffe('deploy.prototxt', 'mobilenet_iter_73000.caffemodel')
+
+# 获取视频流（从摄像头或视频文件）
+cap = cv2.VideoCapture(0)  # 0表示使用默认摄像头，或指定视频文件路径
+
+# 定义检测的类别名称
+CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
+           "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
+           "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
+           "sofa", "train", "tvmonitor"]
+
+while True:
+    # 读取每一帧
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # 获取帧的高度和宽度
+    (h, w) = frame.shape[:2]
+
+    # 预处理帧
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 0.007843, (300, 300), 127.5)
+    net.setInput(blob)
+    detections = net.forward()
+
+    # 存储检测到的人的边界框和置信度
+    persons = []
+
+    # 遍历检测到的对象
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+
+        # 过滤掉置信度低于阈值的检测
+        if confidence > 0.2:
+            idx = int(detections[0, 0, i, 1])
+            if CLASSES[idx] == "person":
+                # 计算边界框
+                box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+                (startX, startY, endX, endY) = box.astype("int")
+
+                # 计算面积
+                area = (endX - startX) * (endY - startY)
+
+                # 存储边界框和面积
+                persons.append((startX, startY, endX, endY, area))
+
+    if persons:
+        # 选择面积最大的边界框
+        largest_person = max(persons, key=lambda x: x[4])
+        startX, startY, endX, endY, area = largest_person
+
+        # 绘制边界框和标签
+        label = "Person"
+        cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
+        y = startY - 15 if startY - 15 > 15 else startY + 15
+        cv2.putText(frame, label, (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        # 打印坐标到控制台
+        coords = f"Coordinates: ({startX}, {startY}), ({endX}, {endY})"
+        print(coords)
+
+    # 显示处理后的视频流
+    cv2.imshow("Frame", frame)
+
+    # 按 'q' 键退出
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# 释放视频捕获对象和关闭所有窗口
+cap.release()
+cv2.destroyAllWindows()
